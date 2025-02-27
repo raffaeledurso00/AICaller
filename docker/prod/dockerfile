@@ -1,0 +1,41 @@
+# Build stage
+FROM node:18-alpine AS build
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Copy package files
+COPY ./packages/backend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY ./packages/backend .
+
+# Build the application
+RUN npm run build
+
+# Production stage
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Set NODE_ENV to production
+ENV NODE_ENV production
+
+# Copy package files
+COPY ./packages/backend/package*.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production
+
+# Copy built application from build stage
+COPY --from=build /usr/src/app/dist ./dist
+
+# Expose application port
+EXPOSE 3000
+
+# Start application in production mode
+CMD ["node", "dist/main"]

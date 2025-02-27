@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # API service
+  api:
+    container_name: aicaller-api
+    build:
+      context: .
+      dockerfile: ./docker/prod/Dockerfile
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      - mongodb
+      - redis
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+    networks:
+      - aicaller-network
+    restart: always
+
+  # MongoDB service
+  mongodb:
+    container_name: aicaller-mongodb
+    image: mongo:latest
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - aicaller-network
+    restart: always
+    command: mongod --auth
+
+  # Redis service
+  redis:
+    container_name: aicaller-redis
+    image: redis:alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      - aicaller-network
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+
+networks:
+  aicaller-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  redis_data:
