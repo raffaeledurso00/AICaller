@@ -185,6 +185,16 @@ export class ContactService {
     }
   }
 
+  async countContactsByStatus(
+    campaignId: string, 
+    statuses: string[],
+  ): Promise<number> {
+    return this.contactModel.countDocuments({
+      campaign: new Types.ObjectId(campaignId),
+      status: { $in: statuses },
+    }).exec();
+  }
+  
   async findAvailableContactsForCampaign(
     campaignId: string, 
     limit: number,

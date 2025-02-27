@@ -22,6 +22,8 @@ import { AiModule } from './modules/ai/ai.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
+import { SchedulerModule } from './modules/scheduler/scheduler.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 // Controllers
 import { HealthController } from './common/controllers/health.controller';
@@ -61,6 +63,7 @@ import { HealthController } from './common/controllers/health.controller';
     TelephonyModule,
     CampaignsModule,
     ContactsModule,
+    SchedulerModule,
   ],
   controllers: [
     HealthController,

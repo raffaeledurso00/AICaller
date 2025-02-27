@@ -180,6 +180,13 @@ const statusWebhookUrl = `${webhookBaseUrl}/api/telephony/webhook/status/${callI
     return response;
   }
   
+  async getActiveCallCount(campaignId: string): Promise<number> {
+    return this.callModel.countDocuments({
+      campaign: new Types.ObjectId(campaignId),
+      status: { $in: [CallStatus.INITIATED, CallStatus.RINGING, CallStatus.IN_PROGRESS] },
+    }).exec();
+  }
+  
   async getCampaignCalls(campaignId: string): Promise<CallDocument[]> {
     return this.callModel.find({ campaign: campaignId })
       .populate('contact')
@@ -193,4 +200,5 @@ const statusWebhookUrl = `${webhookBaseUrl}/api/telephony/webhook/status/${callI
       .sort({ startTime: -1 })
       .exec();
   }
+  
 }
