@@ -564,7 +564,7 @@ const creationResult = await this.campaignModel.aggregate([
     ]).exec();
     
     // Generate dates for the last N days
-    const dateRange = [] as string[];
+    const dateRange = [] as any[];
     for (let i = 0; i < days; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
@@ -624,7 +624,7 @@ $project: {
     ]).exec();
     
     // Generate dates for the last N days
-    const dateRange = [] as string[];
+    const dateRange = [] as any[];
     for (let i = 0; i < days; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
