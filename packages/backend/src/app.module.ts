@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -22,6 +22,9 @@ import { AiModule } from './modules/ai/ai.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
+
+// Controllers
+import { HealthController } from './common/controllers/health.controller';
 
 @Module({
   imports: [
@@ -58,6 +61,9 @@ import { ContactsModule } from './modules/contacts/contacts.module';
     TelephonyModule,
     CampaignsModule,
     ContactsModule,
+  ],
+  controllers: [
+    HealthController,
   ],
   providers: [
     // Global guards
