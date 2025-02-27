@@ -1,0 +1,26 @@
+# Use Node.js as the base image
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Add node_modules/.bin to PATH
+ENV PATH /usr/src/app/node_modules/.bin:$PATH
+
+# Install system dependencies
+RUN apk add --no-cache git python3 make g++
+
+# Copy package files
+COPY ./packages/backend/package*.json ./
+
+# Install dependencies (including dev dependencies)
+RUN npm install
+
+# Copy the rest of the application
+COPY ./packages/backend .
+
+# Expose application port
+EXPOSE 3000
+
+# Start application in development mode with hot-reloading
+CMD ["npm", "run", "start:dev"]

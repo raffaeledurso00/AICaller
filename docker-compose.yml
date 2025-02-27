@@ -1,0 +1,6 @@
+# API service
+  api:
+    container_name: aicaller-api
+    build:
+      context: .
+      dockerfile: ./docker/dev/Dockerfile
