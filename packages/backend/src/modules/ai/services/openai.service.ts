@@ -9,6 +9,7 @@ export class OpenAiService {
   private readonly model: string;
   private readonly temperature: number;
   private readonly maxTokens: number;
+  private readonly embeddingModel: string;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('openai.apiKey');
@@ -25,6 +26,7 @@ export class OpenAiService {
     this.model = this.configService.get<string>('openai.model') || 'gpt-4';
     this.temperature = this.configService.get<number>('openai.temperature') || 0.7;
     this.maxTokens = this.configService.get<number>('openai.maxTokens') || 500;
+    this.embeddingModel = this.configService.get<string>('openai.embeddingModel') || 'text-embedding-ada-002';
   }
 
   async generateResponse(
@@ -179,6 +181,24 @@ export class OpenAiService {
         error: 'Failed to parse analysis result',
         rawText: analysisText,
       };
+    }
+  }
+
+  /**
+   * Generate embeddings for text using OpenAI's embedding models
+   * This is used for vector search in the conversation context
+   */
+  async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      const response = await this.openai.embeddings.create({
+        model: this.embeddingModel,
+        input: text.trim(),
+      });
+
+      return response.data[0].embedding;
+    } catch (error) {
+      this.logger.error(`Error generating embedding: ${error.message}`, error.stack);
+      throw error;
     }
   }
 }
