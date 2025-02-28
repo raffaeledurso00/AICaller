@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { OpenAiService } from './openai.service';
+import { VectorStorageService } from './vector-storage.service';
 import { Call, CallDocument } from '../../telephony/schemas/call.schema';
 import { Campaign } from '../../campaigns/schemas/campaign.schema';
 import { Contact } from '../../contacts/schemas/contact.schema';
@@ -24,6 +25,7 @@ export class ConversationService {
 
   constructor(
     private readonly openAiService: OpenAiService,
+    private readonly vectorStorageService: VectorStorageService,
     @InjectModel(Call.name) private readonly callModel: Model<CallDocument>,
   ) {}
 
@@ -107,6 +109,15 @@ export class ConversationService {
         },
       });
 
+      // Store the initial greeting in the vector storage
+      await this.vectorStorageService.storeText(
+        callId,
+        callId, // Using callId as conversationId for simplicity
+        initialGreeting,
+        { speaker: 'ai', phase: 'introduction' },
+        context
+      );
+
       return initialGreeting;
     } catch (error) {
       this.logger.error(`Error initializing conversation: ${error.message}`, error.stack);
@@ -139,6 +150,15 @@ export class ConversationService {
         },
       });
 
+      // Store the user input in vector storage
+      await this.vectorStorageService.storeText(
+        callId,
+        callId, // Using callId as conversationId
+        userInput,
+        { speaker: 'human', phase: context.currentState },
+        {} // No special context for user messages
+      );
+
       // Convert the conversation history to the format expected by OpenAI
       const conversationHistory = call.conversation.map((msg) => ({
         role: msg.speaker === 'ai' ? 'assistant' as const : 'user' as const,
@@ -154,6 +174,28 @@ export class ConversationService {
         content: this.getSystemPromptForState(context),
       };
 
+      // Retrieve relevant conversation context from vector storage
+      const relevantContext = await this.vectorStorageService.findSimilar(
+        callId,
+        userInput,
+        3 // Get the top 3 most relevant past messages
+      );
+
+      // Add relevant context to the system message
+      let enhancedSystemContent = systemMessage.content;
+      if (relevantContext.length > 0) {
+        enhancedSystemContent += '\n\nRelevant previous conversation context:\n';
+        relevantContext.forEach((item) => {
+          enhancedSystemContent += `- ${item.metadata.speaker}: "${item.text}"\n`;
+        });
+      }
+
+      // Update the system message with enhanced context
+      const enhancedSystemMessage = {
+        role: 'system' as const,
+        content: enhancedSystemContent,
+      };
+
       // Process the message and get AI response and extracted information
       const { response, extractedInfo } = await this.openAiService.processChatMessage(
         userInput,
@@ -164,7 +206,7 @@ export class ConversationService {
           extractedInfo: context.extractedInfo,
           goals: context.goals,
         },
-        [systemMessage, ...conversationHistory],
+        [enhancedSystemMessage, ...conversationHistory],
       );
 
       // Update the conversation context with the extracted information
@@ -186,6 +228,15 @@ export class ConversationService {
           },
         },
       });
+
+      // Store the AI response in vector storage
+      await this.vectorStorageService.storeText(
+        callId,
+        callId, // Using callId as conversationId
+        response,
+        { speaker: 'ai', phase: context.currentState },
+        { extractedInfo: context.extractedInfo }
+      );
 
       return response;
     } catch (error) {
@@ -331,11 +382,61 @@ export class ConversationService {
         },
       });
 
+      // Create a summary of the conversation
+      const summary = await this.createConversationSummary(callId, transcript);
+      
+      // Store the summary in vector storage for future reference
+      await this.vectorStorageService.storeText(
+        callId,
+        callId,
+        summary,
+        { type: 'summary', phase: 'completion' },
+        { extractedInfo: context.extractedInfo, analysis }
+      );
+
       // Remove the conversation from memory
       this.activeConversations.delete(callId);
     } catch (error) {
       this.logger.error(`Error ending conversation: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  private async createConversationSummary(callId: string, transcript: string): Promise<string> {
+    try {
+      const prompt = `
+        Create a concise summary of the following conversation between an AI agent and a customer.
+        Focus on key points discussed, information gathered, concerns raised, and outcomes.
+        
+        TRANSCRIPT:
+        ${transcript}
+        
+        FORMAT YOUR RESPONSE AS:
+        - Main Topics:
+        - Customer Info Gathered:
+        - Customer Sentiment:
+        - Action Items:
+        - Outcome:
+      `;
+
+      const summary = await this.openAiService.generateResponse(prompt, [
+        {
+          role: 'system',
+          content: 'You are an expert in summarizing customer service conversations. Be concise but thorough.',
+        },
+      ]);
+
+      // Store the summary in the call document
+      await this.callModel.findByIdAndUpdate(callId, {
+        $set: {
+          'metadata.summary': summary,
+        },
+      });
+
+      return summary;
+    } catch (error) {
+      this.logger.error(`Error creating conversation summary: ${error.message}`, error.stack);
+      return "Failed to generate summary due to an error.";
     }
   }
 }
