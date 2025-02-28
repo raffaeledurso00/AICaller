@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -35,28 +35,36 @@ import { HealthController } from './common/controllers/health.controller';
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig, openaiConfig, twilioConfig, webhookConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        jwtConfig,
+        openaiConfig,
+        twilioConfig,
+        webhookConfig,
+      ],
     }),
-
+    
     // Database
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('database.uri') || '',
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-      }),
-    }),
-
-    // Rate limiting
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // milliseconds
-        limit: 100,
+      useFactory: (configService: ConfigService) => {
+        return {
+          uri: configService.get<string>('database.uri') || '',
+          // Using only known properties
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+        };
       },
-    ]),
-
+    }),
+    
+    // Rate limiting
+    ThrottlerModule.forRoot([{
+      ttl: 60000, // milliseconds
+      limit: 100,
+    }]),
+    
     // Feature modules
     DatabaseModule,
     AuthModule,
