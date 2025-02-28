@@ -13,6 +13,7 @@ import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import openaiConfig from './config/openai.config';
 import twilioConfig from './config/twilio.config';
+import webhookConfig from './config/webhook.config';
 
 // Module imports
 import { DatabaseModule } from './database/database.module';
@@ -24,6 +25,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 
 // Controllers
 import { HealthController } from './common/controllers/health.controller';
@@ -33,7 +35,7 @@ import { HealthController } from './common/controllers/health.controller';
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig, openaiConfig, twilioConfig],
+      load: [appConfig, databaseConfig, jwtConfig, openaiConfig, twilioConfig, webhookConfig],
     }),
 
     // Database
@@ -64,6 +66,8 @@ import { HealthController } from './common/controllers/health.controller';
     CampaignsModule,
     ContactsModule,
     SchedulerModule,
+    DashboardModule,
+    IntegrationsModule,
   ],
   controllers: [
     HealthController,
