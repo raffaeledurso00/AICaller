@@ -1,41 +1,39 @@
-// packages/backend/src/modules/ai/schemas/vector-store.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
-import { Call } from '../../telephony/schemas/call.schema';
-import { Campaign } from '../../campaigns/schemas/campaign.schema';
 
-export type VectorDocument = Vector & Document;
+export type VectorStorageDocument = VectorStorage & Document;
 
 @Schema({ timestamps: true })
-export class Vector {
+export class VectorStorage {
   @Prop({ required: true })
+  callId: string;
+
+  @Prop({ required: true })
+  conversationId: string;
+
+  @Prop({ required: true, index: true })
   text: string;
 
   @Prop({ type: [Number], required: true })
   embedding: number[];
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Call', required: false })
-  call?: Call;
+  @Prop({ type: Object, default: {} })
+  metadata: Record<string, any>;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Campaign', required: false })
-  campaign?: Campaign;
+  @Prop({ type: MongooseSchema.Types.Mixed })
+  context: any;
 
-  @Prop({ required: true })
-  type: string; // 'user_input', 'ai_response', 'system_message', etc.
+  @Prop({ default: 0 })
+  relevanceScore: number;
 
   @Prop()
   timestamp: Date;
-
-  @Prop({ type: Object, default: {} })
-  metadata: Record<string, any>;
 }
 
-export const VectorSchema = SchemaFactory.createForClass(Vector);
+export const VectorStorageSchema = SchemaFactory.createForClass(VectorStorage);
 
-// Create an index for vector similarity search
-VectorSchema.index(
-  { embedding: 1 },
-  {
-    name: 'embeddingIndex',
-  }
-);
+// Add text index for basic search capabilities
+VectorStorageSchema.index({ text: 'text' });
+
+// Add compound index for efficiently retrieving conversation chunks
+VectorStorageSchema.index({ conversationId: 1, timestamp: -1 });

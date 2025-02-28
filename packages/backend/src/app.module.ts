@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
@@ -14,6 +15,7 @@ import jwtConfig from './config/jwt.config';
 import openaiConfig from './config/openai.config';
 import twilioConfig from './config/twilio.config';
 import webhookConfig from './config/webhook.config';
+import telephonyConfig from './config/telephony.config';
 
 // Module imports
 import { DatabaseModule } from './database/database.module';
@@ -42,6 +44,7 @@ import { HealthController } from './common/controllers/health.controller';
         openaiConfig,
         twilioConfig,
         webhookConfig,
+        telephonyConfig,
       ],
     }),
     
@@ -64,6 +67,9 @@ import { HealthController } from './common/controllers/health.controller';
       ttl: 60000, // milliseconds
       limit: 100,
     }]),
+    
+    // Event emitter for real-time communication
+    EventEmitterModule.forRoot(),
     
     // Feature modules
     DatabaseModule,

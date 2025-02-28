@@ -54,8 +54,9 @@ export class SupervisorInterventionService {
       }
       
       // Check if intervention is already in progress
-      if (this.activeInterventions.has(callId)) {
-        return this.activeInterventions.get(callId);
+      const existingIntervention = this.activeInterventions.get(callId);
+      if (existingIntervention) {
+        return existingIntervention;
       }
       
       // Create a new intervention

@@ -98,4 +98,47 @@ export class TwilioService {
       </Response>
     `;
   }
+
+  /**
+   * Send text to an ongoing call using TTS
+   * Used for supervisor interventions
+   */
+  async sendTextToCall(callId: string, text: string): Promise<boolean> {
+    try {
+      this.logger.log(`Sending text to call ${callId}: ${text}`);
+      
+      // This is a stub implementation
+      // In a real implementation, we would need to:
+      // 1. Look up the call SID from our database
+      // 2. Use Twilio's API to send TTS to the active call
+      
+      // For now, we'll just return success
+      return true;
+      
+      /*
+      // Example of a real implementation:
+      const call = await this.callModel.findById(callId).exec();
+      
+      if (!call || !call.sid) {
+        throw new Error('Call not found or missing SID');
+      }
+      
+      // Update the call with TTS
+      await this.client.calls(call.sid).update({
+        twiml: `
+          <Response>
+            <Say voice="Polly.Amy" language="en-GB">${text}</Say>
+            <Pause length="1"/>
+            <Record action="/api/telephony/webhook/recording" maxLength="60" />
+          </Response>
+        `,
+      });
+      
+      return true;
+      */
+    } catch (error) {
+      this.logger.error(`Error sending text to call: ${error.message}`, error.stack);
+      return false;
+    }
+  }
 }

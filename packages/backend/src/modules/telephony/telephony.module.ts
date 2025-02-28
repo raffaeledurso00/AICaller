@@ -6,8 +6,10 @@ import { Call, CallSchema } from './schemas/call.schema';
 import { TwilioService } from './services/twilio.service';
 import { CallService } from './services/call.service';
 import { RealTimeTranscriptionService } from './services/real-time-transcription.service';
+import { SupervisorInterventionService } from './services/supervisor-intervention.service';
 import { TelephonyController } from './controllers/telephony.controller';
 import { TranscriptionController } from './controllers/transcription.controller';
+import { SupervisorController } from './controllers/supervisor.controller';
 import { AiModule } from '../ai/ai.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 
@@ -19,16 +21,18 @@ import { IntegrationsModule } from '../integrations/integrations.module';
     AiModule,
     IntegrationsModule,
   ],
-  controllers: [TelephonyController, TranscriptionController],
+  controllers: [TelephonyController, TranscriptionController, SupervisorController],
   providers: [
     TwilioService, 
     CallService, 
-    RealTimeTranscriptionService
+    RealTimeTranscriptionService,
+    SupervisorInterventionService
   ],
   exports: [
     TwilioService, 
     CallService, 
-    RealTimeTranscriptionService
+    RealTimeTranscriptionService,
+    SupervisorInterventionService
   ],
 })
 export class TelephonyModule {}
