@@ -117,7 +117,7 @@ export class SchedulerService {
       }
 
       // Initiate calls for selected contacts
-      await this.initiateContactCalls(campaign, contacts, settings);
+      await this.initiateContactCalls(campaign, contacts as (ContactDocument & { _id: Types.ObjectId })[], settings);
     } catch (error) {
       this.logger.error(`Error processing campaign ${campaign.name}`, error);
     }
@@ -154,7 +154,7 @@ export class SchedulerService {
    */
   private async initiateContactCalls(
     campaign: CampaignDocument, 
-    contacts: ContactDocument[], 
+    contacts: (ContactDocument & { _id: Types.ObjectId })[], 
     settings: CampaignCallSettings
   ): Promise<void> {
     const baseUrl = this.configService.get<string>('app.baseUrl', 'http://localhost:3000');
