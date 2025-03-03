@@ -1,3 +1,4 @@
+// packages/backend/src/app.module.ts
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -9,6 +10,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ErrorHandlingMiddleware } from './common/middleware/error-handling.middleware';
 import { CacheMiddleware } from './common/middleware/cache.middleware';
+import { AuditLogMiddleware } from './common/middleware/audit-log.middleware';
 
 // Configuration imports
 import appConfig from './config/app.config';
@@ -20,6 +22,7 @@ import webhookConfig from './config/webhook.config';
 import telephonyConfig from './config/telephony.config';
 import resilienceConfig from './config/resilience.config';
 import cacheConfig from './config/cache.config';
+import securityConfig from './config/security.config';
 
 // Module imports
 import { DatabaseModule } from './database/database.module';
@@ -33,10 +36,10 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { ResilienceModule } from './modules/resilience/resilience.module';
+import { CommonModule } from './common/common.module';
 
 // Controllers
 import { HealthController } from './common/controllers/health.controller';
-import securityConfig from './config/security.config';
 
 @Module({
   imports: [
@@ -47,13 +50,13 @@ import securityConfig from './config/security.config';
         appConfig,
         databaseConfig,
         jwtConfig,
-        securityConfig,
         openaiConfig,
         twilioConfig,
         webhookConfig,
         telephonyConfig,
         resilienceConfig,
         cacheConfig,
+        securityConfig,
       ],
     }),
     
@@ -87,6 +90,7 @@ import securityConfig from './config/security.config';
     DashboardModule,
     IntegrationsModule,
     ResilienceModule,
+    CommonModule,
   ],
   controllers: [
     HealthController,
