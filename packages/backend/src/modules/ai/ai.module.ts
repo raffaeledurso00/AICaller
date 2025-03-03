@@ -10,6 +10,7 @@ import { AiController } from './controllers/ai.controller';
 import { ScriptController } from './controllers/script.controller';
 import { Call, CallSchema } from '../telephony/schemas/call.schema';
 import { VectorStorage, VectorStorageSchema } from './schemas/vector-storage.schema';
+import { ResilienceModule } from '../resilience/resilience.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { VectorStorage, VectorStorageSchema } from './schemas/vector-storage.sch
       { name: Call.name, schema: CallSchema },
       { name: VectorStorage.name, schema: VectorStorageSchema },
     ]),
+    ResilienceModule,
   ],
   controllers: [AiController, ScriptController],
   providers: [
