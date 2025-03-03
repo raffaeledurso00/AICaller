@@ -36,6 +36,7 @@ import { ResilienceModule } from './modules/resilience/resilience.module';
 
 // Controllers
 import { HealthController } from './common/controllers/health.controller';
+import securityConfig from './config/security.config';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { HealthController } from './common/controllers/health.controller';
         appConfig,
         databaseConfig,
         jwtConfig,
+        securityConfig,
         openaiConfig,
         twilioConfig,
         webhookConfig,
