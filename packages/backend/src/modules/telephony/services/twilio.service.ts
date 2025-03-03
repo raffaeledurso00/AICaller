@@ -1,14 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
+import { RetryService } from '../../resilience/services/retry.service';
+import { CircuitBreakerService } from '../../resilience/services/circuit-breaker.service';
+import { ErrorTrackingService } from '../../resilience/services/error-tracking.service';
 
 @Injectable()
 export class TwilioService {
   private readonly logger = new Logger(TwilioService.name);
   private readonly client: Twilio;
   private readonly defaultPhoneNumber: string;
+  private readonly serviceKey = 'twilio';
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly retryService: RetryService,
+    private readonly circuitBreakerService: CircuitBreakerService,
+    private readonly errorTrackingService: ErrorTrackingService,
+  ) {
     const accountSid = this.configService.get<string>('twilio.accountSid');
     const authToken = this.configService.get<string>('twilio.authToken');
     this.defaultPhoneNumber = this.configService.get<string>('twilio.phoneNumber') || '';
@@ -27,24 +36,52 @@ export class TwilioService {
     webhookUrl: string,
     statusCallback?: string,
   ) {
-    try {
-      this.logger.log(`Initiating call from ${from} to ${to}`);
+    const executeCall = async () => {
+      try {
+        this.logger.log(`Initiating call from ${from} to ${to}`);
 
-      const call = await this.client.calls.create({
-        to,
-        from,
-        url: webhookUrl, // Webhook URL for TwiML instructions
-        statusCallback, // Webhook URL for call status updates
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        statusCallbackMethod: 'POST',
-      });
+        const call = await this.client.calls.create({
+          to,
+          from,
+          url: webhookUrl, // Webhook URL for TwiML instructions
+          statusCallback, // Webhook URL for call status updates
+          statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+          statusCallbackMethod: 'POST',
+        });
 
-      this.logger.log(`Call initiated with SID: ${call.sid}`);
-      return call;
-    } catch (error) {
-      this.logger.error(`Error making call: ${error.message}`, error.stack);
-      throw error;
-    }
+        this.logger.log(`Call initiated with SID: ${call.sid}`);
+        return call;
+      } catch (error) {
+        this.logger.error(`Error making call: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          to,
+          from,
+          webhookUrl,
+        });
+        
+        throw error;
+      }
+    };
+
+    // Use circuit breaker with retry
+    return this.circuitBreakerService.executeWithCircuitBreaker(
+      this.serviceKey,
+      () => this.retryService.executeWithRetry(executeCall, {
+        retryCondition: (error) => {
+          // Only retry certain types of errors
+          return (
+            error.code === 20001 || // Invalid phone number
+            error.code === 20404 || // Resource not found
+            error.code === 20429 || // Too many requests
+            error.code === 20003 || // Authentication error
+            error.message.includes('timeout') ||
+            error.code === 'ECONNRESET'
+          );
+        },
+      }),
+    );
   }
 
   async sendSms(
@@ -52,39 +89,88 @@ export class TwilioService {
     body: string,
     from: string = this.defaultPhoneNumber,
   ) {
-    try {
-      this.logger.log(`Sending SMS from ${from} to ${to}`);
+    const executeSms = async () => {
+      try {
+        this.logger.log(`Sending SMS from ${from} to ${to}`);
 
-      const message = await this.client.messages.create({
-        to,
-        from,
-        body,
-      });
+        const message = await this.client.messages.create({
+          to,
+          from,
+          body,
+        });
 
-      this.logger.log(`SMS sent with SID: ${message.sid}`);
-      return message;
-    } catch (error) {
-      this.logger.error(`Error sending SMS: ${error.message}`, error.stack);
-      throw error;
-    }
+        this.logger.log(`SMS sent with SID: ${message.sid}`);
+        return message;
+      } catch (error) {
+        this.logger.error(`Error sending SMS: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          to,
+          from,
+          bodyLength: body.length,
+        });
+        
+        throw error;
+      }
+    };
+
+    // Use circuit breaker with retry
+    return this.circuitBreakerService.executeWithCircuitBreaker(
+      `${this.serviceKey}_sms`,
+      () => this.retryService.executeWithRetry(executeSms, {
+        maxRetries: 2,
+        retryDelay: 1000,
+      }),
+    );
   }
 
   async getCallDetails(callSid: string) {
-    try {
-      return await this.client.calls(callSid).fetch();
-    } catch (error) {
-      this.logger.error(`Error fetching call details: ${error.message}`, error.stack);
-      throw error;
-    }
+    const executeGetCall = async () => {
+      try {
+        return await this.client.calls(callSid).fetch();
+      } catch (error) {
+        this.logger.error(`Error fetching call details: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          callSid,
+          operation: 'getCallDetails',
+        });
+        
+        throw error;
+      }
+    };
+
+    // Use retry for fetching call details
+    return this.retryService.executeWithRetry(executeGetCall, {
+      maxRetries: 2,
+      retryDelay: 500,
+    });
   }
 
   async endCall(callSid: string) {
-    try {
-      return await this.client.calls(callSid).update({ status: 'completed' });
-    } catch (error) {
-      this.logger.error(`Error ending call: ${error.message}`, error.stack);
-      throw error;
-    }
+    const executeEndCall = async () => {
+      try {
+        return await this.client.calls(callSid).update({ status: 'completed' });
+      } catch (error) {
+        this.logger.error(`Error ending call: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          callSid,
+          operation: 'endCall',
+        });
+        
+        throw error;
+      }
+    };
+
+    // Use circuit breaker with retry
+    return this.circuitBreakerService.executeWithCircuitBreaker(
+      `${this.serviceKey}_call_management`,
+      () => this.retryService.executeWithRetry(executeEndCall),
+    );
   }
 
   generateTwiML(response: string): string {
@@ -114,30 +200,16 @@ export class TwilioService {
       
       // For now, we'll just return success
       return true;
-      
-      /*
-      // Example of a real implementation:
-      const call = await this.callModel.findById(callId).exec();
-      
-      if (!call || !call.sid) {
-        throw new Error('Call not found or missing SID');
-      }
-      
-      // Update the call with TTS
-      await this.client.calls(call.sid).update({
-        twiml: `
-          <Response>
-            <Say voice="Polly.Amy" language="en-GB">${text}</Say>
-            <Pause length="1"/>
-            <Record action="/api/telephony/webhook/recording" maxLength="60" />
-          </Response>
-        `,
-      });
-      
-      return true;
-      */
     } catch (error) {
       this.logger.error(`Error sending text to call: ${error.message}`, error.stack);
+      
+      // Track the error
+      await this.errorTrackingService.trackError(this.serviceKey, error, {
+        callId,
+        textLength: text.length,
+        operation: 'sendTextToCall',
+      });
+      
       return false;
     }
   }
