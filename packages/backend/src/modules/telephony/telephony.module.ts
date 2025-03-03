@@ -12,6 +12,7 @@ import { TranscriptionController } from './controllers/transcription.controller'
 import { SupervisorController } from './controllers/supervisor.controller';
 import { AiModule } from '../ai/ai.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
+import { ResilienceModule } from '../resilience/resilience.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { IntegrationsModule } from '../integrations/integrations.module';
     EventEmitterModule.forRoot(),
     AiModule,
     IntegrationsModule,
+    ResilienceModule,
   ],
   controllers: [TelephonyController, TranscriptionController, SupervisorController],
   providers: [
