@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -11,6 +11,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') || 3000;
+  const logger = new Logger('Bootstrap');
 
   // Security middleware
   app.use(helmet());
@@ -49,8 +50,19 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup('api/docs', app, document);
   }
 
+  // Set up global uncaught exception and unhandled rejection handlers
+  process.on('uncaughtException', (error) => {
+    logger.error('Uncaught Exception', error.stack);
+    // Allow process to exit naturally or restart through external process manager like PM2
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
+    // Allow process to exit naturally or restart through external process manager like PM2
+  });
+
   await app.listen(port);
-  console.log(`Application is running on: http://localhost:${port}`);
+  logger.log(`Application is running on: http://localhost:${port}`);
 }
 
 // Make sure to await the bootstrap function or handle the promise properly
