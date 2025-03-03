@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -7,6 +7,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { ErrorHandlingMiddleware } from './common/middleware/error-handling.middleware';
+import { CacheMiddleware } from './common/middleware/cache.middleware';
 
 // Configuration imports
 import appConfig from './config/app.config';
@@ -16,6 +18,8 @@ import openaiConfig from './config/openai.config';
 import twilioConfig from './config/twilio.config';
 import webhookConfig from './config/webhook.config';
 import telephonyConfig from './config/telephony.config';
+import resilienceConfig from './config/resilience.config';
+import cacheConfig from './config/cache.config';
 
 // Module imports
 import { DatabaseModule } from './database/database.module';
@@ -28,6 +32,7 @@ import { ContactsModule } from './modules/contacts/contacts.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { ResilienceModule } from './modules/resilience/resilience.module';
 
 // Controllers
 import { HealthController } from './common/controllers/health.controller';
@@ -45,6 +50,8 @@ import { HealthController } from './common/controllers/health.controller';
         twilioConfig,
         webhookConfig,
         telephonyConfig,
+        resilienceConfig,
+        cacheConfig,
       ],
     }),
     
@@ -52,14 +59,9 @@ import { HealthController } from './common/controllers/health.controller';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        return {
-          uri: configService.get<string>('database.uri') || '',
-          // Using only known properties
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-        };
-      },
+      useFactory: (configService: ConfigService) => ({
+        uri: configService.get<string>('database.uri') || '',
+      }),
     }),
     
     // Rate limiting
@@ -82,6 +84,7 @@ import { HealthController } from './common/controllers/health.controller';
     SchedulerModule,
     DashboardModule,
     IntegrationsModule,
+    ResilienceModule,
   ],
   controllers: [
     HealthController,
@@ -102,4 +105,10 @@ import { HealthController } from './common/controllers/health.controller';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(ErrorHandlingMiddleware, CacheMiddleware)
+      .forRoutes('*');
+  }
+}
