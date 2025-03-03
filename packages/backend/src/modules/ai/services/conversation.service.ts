@@ -17,9 +17,12 @@ interface ConversationContext {
   currentState: string;
 }
 
-// Type guard for documents with _id
-function hasId(doc: any): doc is { _id: string | { toString(): string } } {
-  return doc && (doc._id !== undefined);
+// Utility function to safely extract document ID
+function safeExtractId(doc: { _id?: unknown }): string {
+  if (!doc._id) return '';
+  return typeof doc._id === 'string' || doc._id instanceof Types.ObjectId
+    ? doc._id.toString()
+    : '';
 }
 
 @Injectable()
@@ -43,17 +46,8 @@ export class ConversationService {
   ): Promise<string> {
     try {
       // Safely extract campaign and contact IDs
-      const campaignId = hasId(campaign) 
-        ? (typeof campaign._id === 'string' 
-          ? campaign._id 
-          : campaign._id.toString()) 
-        : '';
-      
-      const contactId = hasId(contact) 
-        ? (typeof contact._id === 'string' 
-          ? contact._id 
-          : contact._id.toString()) 
-        : '';
+      const campaignId = safeExtractId(campaign);
+      const contactId = safeExtractId(contact);
 
       // Prepare context
       const context: ConversationContext = {
