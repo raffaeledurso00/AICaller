@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAiService } from './openai.service';
 import { Call, CallDocument } from '../../telephony/schemas/call.schema';
+import { Types } from 'mongoose';
 
 export interface SentimentAnalysis {
   overall: 'positive' | 'neutral' | 'negative';
@@ -46,6 +47,17 @@ export interface ConversationInsights {
   successProbability: number;
 }
 
+// Utility function to safely extract ID
+function safeExtractId(call: Call | CallDocument): string {
+  if ('_id' in call) {
+    const id = call._id;
+    return id instanceof Types.ObjectId 
+      ? id.toString() 
+      : (id as string);
+  }
+  return '';
+}
+
 @Injectable()
 export class ConversationAnalysisService {
   private readonly logger = new Logger(ConversationAnalysisService.name);
@@ -63,7 +75,8 @@ export class ConversationAnalysisService {
     metrics: ConversationMetrics;
     sentiment: SentimentAnalysis;
   }> {
-    this.logger.log(`Analyzing conversation for call ${call._id}`);
+    const callId = safeExtractId(call);
+    this.logger.log(`Analyzing conversation for call ${callId}`);
     
     try {
       if (!call.conversation || call.conversation.length === 0) {
@@ -231,6 +244,9 @@ export class ConversationAnalysisService {
     return Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
   }
 
+  // Remaining methods (analyzeSentiment, generateConversationInsights) 
+  // would be implemented similarly with appropriate type handling
+  
   /**
    * Analyze sentiment of a text
    */
