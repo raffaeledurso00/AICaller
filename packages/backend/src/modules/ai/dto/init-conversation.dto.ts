@@ -1,8 +1,8 @@
 import { IsNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { Campaign } from '../../campaigns/schemas/campaign.schema';
-import { Contact } from '../../contacts/schemas/contact.schema';
+import { Campaign, CampaignDocument } from '../../campaigns/schemas/campaign.schema';
+import { Contact, ContactDocument } from '../../contacts/schemas/contact.schema';
 
 export class InitConversationDto {
   @ApiProperty({
@@ -13,7 +13,7 @@ export class InitConversationDto {
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => Campaign)
-  campaign: Campaign;
+  campaign: CampaignDocument;
 
   @ApiProperty({
     description: 'The contact object',
@@ -23,5 +23,5 @@ export class InitConversationDto {
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => Contact)
-  contact: Contact;
+  contact: ContactDocument;
 }
