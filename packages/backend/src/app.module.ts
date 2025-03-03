@@ -111,4 +111,4 @@ export class AppModule implements NestModule {
       .apply(ErrorHandlingMiddleware, CacheMiddleware)
       .forRoutes('*');
   }
-} 
+}
