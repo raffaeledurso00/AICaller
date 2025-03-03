@@ -183,7 +183,7 @@ export class CrmService {
         outcome: call.outcome,
         notes: call.notes,
         recordingUrl: call.recordingUrl,
-        contactId: contact._id,
+        contactId: (contact as any)._id.toString(),
         // Map additional fields based on integration's field mapping
         ...this.mapFields(call, integration.fieldMapping),
       };
