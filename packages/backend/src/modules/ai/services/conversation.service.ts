@@ -1,16 +1,31 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { OpenAiService } from './openai.service';
 import { VectorStorageService } from './vector-storage.service';
 import { Call, CallDocument } from '../../telephony/schemas/call.schema';
-import { Campaign } from '../../campaigns/schemas/campaign.schema';
-import { Contact } from '../../contacts/schemas/contact.schema';
+import { Campaign, CampaignDocument } from '../../campaigns/schemas/campaign.schema';
+import { Contact, ContactDocument } from '../../contacts/schemas/contact.schema';
+
+// Define types for conversation management
+interface ConversationContext {
+  callId: string;
+  campaignId: string;
+  contactId: string;
+  scriptTemplate: string;
+  scriptVariables: Record<string, any>;
+  currentState: string;
+}
+
+// Type guard for documents with _id
+function hasId(doc: any): doc is { _id: string | { toString(): string } } {
+  return doc && (doc._id !== undefined);
+}
 
 @Injectable()
 export class ConversationService {
   private readonly logger = new Logger(ConversationService.name);
-  private readonly activeConversations = new Map<string, any>();
+  private readonly activeConversations = new Map<string, ConversationContext>();
 
   constructor(
     private readonly openAiService: OpenAiService,
@@ -23,15 +38,28 @@ export class ConversationService {
    */
   async initializeConversation(
     callId: string, 
-    campaign: Campaign, 
-    contact: Contact
+    campaign: CampaignDocument, 
+    contact: ContactDocument
   ): Promise<string> {
     try {
+      // Safely extract campaign and contact IDs
+      const campaignId = hasId(campaign) 
+        ? (typeof campaign._id === 'string' 
+          ? campaign._id 
+          : campaign._id.toString()) 
+        : '';
+      
+      const contactId = hasId(contact) 
+        ? (typeof contact._id === 'string' 
+          ? contact._id 
+          : contact._id.toString()) 
+        : '';
+
       // Prepare context
-      const context = {
+      const context: ConversationContext = {
         callId,
-        campaignId: this.extractId(campaign),
-        contactId: this.extractId(contact),
+        campaignId,
+        contactId,
         scriptTemplate: campaign.scriptTemplate,
         scriptVariables: campaign.scriptVariables || {},
         currentState: 'introduction',
@@ -132,22 +160,11 @@ export class ConversationService {
   }
 
   /**
-   * Extract document ID safely
-   */
-  private extractId(doc: { _id?: string | { toString(): string } }): string {
-    return doc._id 
-      ? typeof doc._id === 'string' 
-        ? doc._id 
-        : doc._id.toString()
-      : '';
-  }
-
-  /**
    * Process script template with variables
    */
   private processScriptTemplate(
-    context: any, 
-    contact: Contact
+    context: ConversationContext, 
+    contact: ContactDocument
   ): string {
     let template = context.scriptTemplate;
 
@@ -169,8 +186,8 @@ export class ConversationService {
    * Generate initial greeting
    */
   private async generateInitialGreeting(
-    campaign: Campaign,
-    contact: Contact,
+    campaign: CampaignDocument,
+    contact: ContactDocument,
     scriptTemplate: string
   ): Promise<string> {
     const prompt = `Generate an introductory greeting for a call:
@@ -184,12 +201,12 @@ export class ConversationService {
       - Reference the purpose of the call
     `;
 
-    return this.openAiService.generateResponse(prompt, [
-      {
-        role: 'system',
-        content: 'You are an AI assistant making an initial call introduction'
-      }
-    ]);
+    const systemPrompt = {
+      role: 'system' as const,
+      content: 'You are an AI assistant making an initial call introduction'
+    };
+
+    return this.openAiService.generateResponse(prompt, [systemPrompt]);
   }
 
   /**
@@ -234,12 +251,12 @@ export class ConversationService {
    */
   private async generateResponse(
     userInput: string, 
-    context: any, 
+    context: ConversationContext, 
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<string> {
     const systemPrompt = {
-      role: 'system',
-      content: `You are an AI assistant in a ${context.campaignType} campaign. 
+      role: 'system' as const,
+      content: `You are an AI assistant in a conversation. 
         Current conversation state: ${context.currentState}
         Focus on having a natural, helpful conversation.`,
     };
@@ -254,7 +271,7 @@ export class ConversationService {
    * Update conversation state
    */
   private updateConversationState(
-    context: any, 
+    context: ConversationContext, 
     userInput: string
   ): void {
     const input = userInput.toLowerCase();
@@ -301,18 +318,18 @@ export class ConversationService {
         .map(msg => `${msg.speaker.toUpperCase()}: ${msg.message}`)
         .join('\n\n');
 
+      const systemPrompt = {
+        role: 'system' as const,
+        content: 'Create a clear, concise summary of the conversation.',
+      };
+
       return this.openAiService.generateResponse(
         `Summarize this conversation concisely:
 
 ${transcript}
 
 Provide key points, outcomes, and main discussion topics.`,
-        [
-          {
-            role: 'system',
-            content: 'Create a clear, concise summary of the conversation.',
-          },
-        ]
+        [systemPrompt]
       );
     } catch (error) {
       this.logger.error(`Summary generation error: ${error.message}`, error.stack);
