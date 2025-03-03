@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { MigrationFramework } from './framework';
-import { AddCallMetricsMigration, AddContactTagsMigration } from './002-add-contact-tags';
+import { AddCallMetricsMigration, AddContactTagsMigration } from './001-add-call-metrics';
 
 // Import all migrations here
 const migrations = [

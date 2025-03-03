@@ -54,7 +54,11 @@ export class WebhookService {
    * Get a webhook by ID
    */
   async getWebhookById(id: string): Promise<WebhookDocument> {
-    return this.webhookModel.findById(id).exec();
+    const webhook = await this.webhookModel.findById(id).exec();
+    if (!webhook) {
+      throw new Error(`Webhook with id ${id} not found`);
+    }
+    return webhook;
   }
 
   /**
@@ -63,7 +67,11 @@ export class WebhookService {
   async updateWebhook(id: string, updateData: Partial<Webhook>): Promise<WebhookDocument> {
     this.logger.log(`Updating webhook: ${id}`);
     
-    return this.webhookModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    const updatedWebhook = await this.webhookModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    if (!updatedWebhook) {
+      throw new Error(`Webhook with id ${id} not found`);
+    }
+    return updatedWebhook;
   }
 
   /**
@@ -101,7 +109,7 @@ export class WebhookService {
     };
     
     // Send the webhook to all subscribed endpoints
-    const promises = webhooks.map(webhook => this.sendWebhook(webhook, payload));
+    const promises = webhooks.map(webhook => this.sendWebhook(webhook as WebhookDocument & { _id: string }, payload));
     
     // Wait for all webhooks to be processed
     await Promise.allSettled(promises);
@@ -110,7 +118,7 @@ export class WebhookService {
   /**
    * Send a webhook to a specific endpoint
    */
-  private async sendWebhook(webhook: WebhookDocument, payload: any): Promise<void> {
+  private async sendWebhook(webhook: WebhookDocument & { _id: string }, payload: any): Promise<void> {
     try {
       this.logger.debug(`Sending webhook to: ${webhook.url}`);
       

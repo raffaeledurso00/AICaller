@@ -10,6 +10,7 @@ export enum ContactStatus {
   DO_NOT_CALL = 'do_not_call',
 }
 
+
 export type ContactDocument = Contact & Document;
 
 @Schema({ timestamps: true })
@@ -20,6 +21,14 @@ export class Contact {
   @Prop({ required: true })
   lastName: string;
 
+  @Prop({ required: true })
+  externalIds: {
+    salesforce?: string;
+    hubspot?: string;
+    zoho?: string;
+    custom?: string;
+  };
+  
   @Prop({ required: true })
   phoneNumber: string;
 

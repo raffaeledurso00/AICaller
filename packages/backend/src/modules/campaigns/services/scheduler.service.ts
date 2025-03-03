@@ -70,7 +70,7 @@ export class SchedulerService {
   /**
    * Process a single campaign by finding available contacts and initiating calls
    */
-  private async processCampaign(campaign: CampaignDocument) {
+  private async processCampaign(campaign: CampaignDocument & { _id: string }) {
     this.logger.log(`Processing campaign: ${campaign.name} (${campaign._id})`);
     
     try {
@@ -115,7 +115,7 @@ export class SchedulerService {
           // Initiate the call
           await this.callService.initiateOutboundCall(
             campaign._id.toString(),
-            contact._id.toString(),
+            contact.id.toString(),
             fromNumber,
             contact.phoneNumber,
             this.baseUrl,

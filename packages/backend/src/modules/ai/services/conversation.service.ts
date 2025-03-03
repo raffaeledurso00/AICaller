@@ -110,7 +110,7 @@ export class ConversationService {
       });
 
       // Store the initial greeting in the vector storage
-      await this.vectorStorageService.storeText(
+      await this.vectorStorageService.storeEntry(
         callId,
         callId, // Using callId as conversationId for simplicity
         initialGreeting,
@@ -151,7 +151,7 @@ export class ConversationService {
       });
 
       // Store the user input in vector storage
-      await this.vectorStorageService.storeText(
+      await this.vectorStorageService.storeEntry(
         callId,
         callId, // Using callId as conversationId
         userInput,
@@ -230,7 +230,7 @@ export class ConversationService {
       });
 
       // Store the AI response in vector storage
-      await this.vectorStorageService.storeText(
+      await this.vectorStorageService.storeEntry(
         callId,
         callId, // Using callId as conversationId
         response,
@@ -386,7 +386,7 @@ export class ConversationService {
       const summary = await this.createConversationSummary(callId, transcript);
       
       // Store the summary in vector storage for future reference
-      await this.vectorStorageService.storeText(
+      await this.vectorStorageService.storeEntry(
         callId,
         callId,
         summary,

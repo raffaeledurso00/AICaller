@@ -49,7 +49,7 @@ import {
         createIntegrationDto.name,
         createIntegrationDto.type as IntegrationType,
         createIntegrationDto.config,
-        createIntegrationDto.fieldMapping,
+        createIntegrationDto.fieldMapping || {},
       );
     }
   
@@ -85,7 +85,10 @@ import {
       @Param('id') id: string,
       @Body() updateIntegrationDto: UpdateIntegrationDto,
     ) {
-      const integration = await this.crmService.updateIntegration(id, updateIntegrationDto);
+      const integration = await this.crmService.updateIntegration(id, {
+        ...updateIntegrationDto,
+        type: updateIntegrationDto.type as IntegrationType,
+      });
       
       if (!integration) {
         throw new NotFoundException(`Integration with ID ${id} not found`);

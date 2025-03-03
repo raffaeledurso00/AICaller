@@ -53,7 +53,11 @@ export class CrmService {
    * Get an integration by ID
    */
   async getIntegrationById(id: string): Promise<IntegrationDocument> {
-    return this.integrationModel.findById(id).exec();
+    const integration = await this.integrationModel.findById(id).exec();
+    if (!integration) {
+      throw new Error('Integration not found');
+    }
+    return integration;
   }
 
   /**
@@ -62,7 +66,11 @@ export class CrmService {
   async updateIntegration(id: string, updateData: Partial<Integration>): Promise<IntegrationDocument> {
     this.logger.log(`Updating integration: ${id}`);
     
-    return this.integrationModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    const updatedIntegration = await this.integrationModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    if (!updatedIntegration) {
+      throw new Error('Integration not found');
+    }
+    return updatedIntegration;
   }
 
   /**
@@ -175,7 +183,7 @@ export class CrmService {
         outcome: call.outcome,
         notes: call.notes,
         recordingUrl: call.recordingUrl,
-        contactId: contact.id,
+        contactId: contact._id,
         // Map additional fields based on integration's field mapping
         ...this.mapFields(call, integration.fieldMapping),
       };
@@ -687,9 +695,9 @@ export class CrmService {
         const queryResponse = await axios.get(
           `${instanceUrl}/services/data/v53.0/query/?q=SELECT+Id+FROM+Contact+WHERE+Email='${contact.email}'`,
           {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
           }
         );
         

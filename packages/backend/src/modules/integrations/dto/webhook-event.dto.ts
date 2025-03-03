@@ -14,6 +14,7 @@ export class WebhookEventDto {
   @ApiProperty({
     description: 'The data payload for the webhook event',
     type: 'object',
+    additionalProperties: true,
   })
   @IsObject()
   data: Record<string, any>;

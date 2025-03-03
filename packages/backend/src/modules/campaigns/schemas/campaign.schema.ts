@@ -20,7 +20,7 @@ export enum CampaignType {
   LEAD_QUALIFICATION = 'lead_qualification',
 }
 
-export type CampaignDocument = Campaign & Document;
+export type CampaignDocument = Campaign & Document & { _id: string };
 
 @Schema({ timestamps: true })
 export class Campaign {
