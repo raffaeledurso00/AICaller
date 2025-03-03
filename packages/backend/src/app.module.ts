@@ -110,7 +110,7 @@ import securityConfig from './config/security.config';
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(ErrorHandlingMiddleware, CacheMiddleware)
+      .apply(ErrorHandlingMiddleware, CacheMiddleware, AuditLogMiddleware)
       .forRoutes('*');
   }
 }
