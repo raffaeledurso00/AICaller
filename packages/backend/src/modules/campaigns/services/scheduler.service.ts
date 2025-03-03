@@ -1,60 +1,68 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Campaign, CampaignDocument, CampaignStatus } from '../schemas/campaign.schema';
-import { ContactService } from '../../contacts/services/contact.service';
+import { Contact, ContactDocument, ContactStatus } from '../../contacts/schemas/contact.schema';
 import { CallService } from '../../telephony/services/call.service';
+import { ContactService } from '../../contacts/services/contact.service';
+
+interface CampaignCallSettings {
+  callRetryAttempts?: number;
+  callRetryDelay?: number;
+  callTimeWindow?: {
+    start: string;
+    end: string;
+    timezone: string;
+  };
+  successCriteria?: Record<string, any>;
+  phoneNumber?: string;
+}
 
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
-  private readonly baseUrl: string;
-  private readonly defaultFromNumber: string;
-  
+
   constructor(
     @InjectModel(Campaign.name) private readonly campaignModel: Model<CampaignDocument>,
-    private readonly contactService: ContactService,
+    @InjectModel(Contact.name) private readonly contactModel: Model<ContactDocument>,
     private readonly callService: CallService,
+    private readonly contactService: ContactService,
     private readonly configService: ConfigService,
-  ) {
-    // Get the base URL for webhooks and default from number from config
-    this.baseUrl = this.configService.get<string>('app.baseUrl') || 'http://localhost:3000';
-    this.defaultFromNumber = this.configService.get<string>('twilio.phoneNumber') || '';
-  }
+  ) {}
 
   /**
-   * Run every minute to check for campaigns that need to be processed
+   * Scheduled job to process active campaigns every minute
    */
   @Cron(CronExpression.EVERY_MINUTE)
-  async processActiveCampaigns() {
-    this.logger.debug('Checking for active campaigns to process...');
-    
+  async processActiveCampaigns(): Promise<void> {
+    this.logger.debug('Starting campaign processing cycle');
+
     try {
-      // Find active campaigns that are scheduled to run now
-      const activeCampaigns = await this.findActiveCampaigns();
-      
+      // Find campaigns ready for processing
+      const activeCampaigns = await this.findEligibleCampaigns();
+
       if (activeCampaigns.length === 0) {
-        this.logger.debug('No active campaigns to process.');
+        this.logger.debug('No campaigns require processing');
         return;
       }
-      
-      this.logger.log(`Found ${activeCampaigns.length} active campaigns to process.`);
-      
-      // Process each campaign
-      for (const campaign of activeCampaigns) {
-        await this.processCampaign(campaign);
-      }
+
+      this.logger.log(`Processing ${activeCampaigns.length} active campaigns`);
+
+      // Process each campaign concurrently
+      await Promise.all(
+        activeCampaigns.map(campaign => this.processCampaign(campaign))
+      );
     } catch (error) {
-      this.logger.error(`Error processing campaigns: ${error.message}`, error.stack);
+      this.logger.error('Error in campaign processing cycle', error);
     }
   }
 
   /**
-   * Find campaigns that are active and should be processed now
+   * Find campaigns that are active and ready to be processed
    */
-  private async findActiveCampaigns(): Promise<CampaignDocument[]> {
+  private async findEligibleCampaigns(): Promise<CampaignDocument[]> {
     const now = new Date();
     
     return this.campaignModel.find({
@@ -64,120 +72,175 @@ export class SchedulerService {
         { endDate: { $gte: now } },
         { endDate: { $exists: false } },
       ],
-    }).exec();
+    })
+    .populate('owner')
+    .populate('supervisors')
+    .exec();
   }
 
   /**
-   * Process a single campaign by finding available contacts and initiating calls
+   * Process a single campaign
    */
-  private async processCampaign(campaign: CampaignDocument & { _id: string }) {
-    this.logger.log(`Processing campaign: ${campaign.name} (${campaign._id})`);
-    
+  private async processCampaign(campaign: CampaignDocument): Promise<void> {
     try {
-      // Check if we can make more calls for this campaign
-      const currentCallCount = await this.getActiveCallCount(campaign._id.toString());
+      this.logger.log(`Processing campaign: ${campaign.name}`);
+
+      // Get campaign-specific call settings
+      const settings = campaign.settings || {};
+
+      // Determine max concurrent calls
       const maxConcurrentCalls = campaign.maxConcurrentCalls || 1;
-      
-      if (currentCallCount >= maxConcurrentCalls) {
-        this.logger.debug(`Campaign ${campaign.name} already has ${currentCallCount} active calls. Max is ${maxConcurrentCalls}.`);
-        return;
-      }
-      
-      // Calculate how many more calls we can make
-      const availableSlots = maxConcurrentCalls - currentCallCount;
-      
-      // Find available contacts for this campaign
-      const contacts = await this.contactService.findAvailableContactsForCampaign(
-        campaign._id.toString(),
-        availableSlots,
+
+      // Check current active calls
+      const currentCallCount = await this.callService.getActiveCallCount(
+        campaign._id.toString()
       );
-      
-      if (contacts.length === 0) {
-        this.logger.debug(`No available contacts for campaign ${campaign.name}.`);
-        
-        // If no contacts are available and we're not making any calls,
-        // check if campaign is complete
-        if (currentCallCount === 0) {
-          await this.checkCampaignCompletion(campaign);
-        }
-        
+
+      // Calculate available call slots
+      const availableSlots = Math.max(0, maxConcurrentCalls - currentCallCount);
+
+      if (availableSlots === 0) {
+        this.logger.debug(`Campaign ${campaign.name} has reached max concurrent calls`);
         return;
       }
-      
-      this.logger.log(`Initiating calls for ${contacts.length} contacts in campaign ${campaign.name}.`);
-      
-      // Use the campaign phone number or the default
-      const fromNumber = campaign.settings?.phoneNumber || this.defaultFromNumber;
-      
-      // Initiate calls for each contact
-      for (const contact of contacts) {
-        try {
-          // Initiate the call
-          await this.callService.initiateOutboundCall(
-            campaign._id.toString(),
-            contact.id.toString(),
-            fromNumber,
-            contact.phoneNumber,
-            this.baseUrl,
-          );
-          
-          // Update contact status and attempt count
-          await this.contactService.updateStatus(contact._id.toString(), 'in_progress');
-          await this.contactService.incrementAttemptCount(contact._id.toString());
-          await this.contactService.addHistoryEntry(
-            contact._id.toString(),
-            'call_initiated',
-            'Call initiated by scheduler',
-          );
-          
-          // Update campaign metrics
-          await this.campaignModel.updateOne(
-            { _id: campaign._id },
-            { $inc: { contactedCount: 1 } },
-          );
-          
-          this.logger.debug(`Initiated call to ${contact.firstName} ${contact.lastName} (${contact.phoneNumber}).`);
-        } catch (error) {
-          this.logger.error(`Error initiating call for contact ${contact._id}: ${error.message}`);
-          
-          // Mark the contact as failed
-          await this.contactService.updateStatus(contact._id.toString(), 'failed');
-          await this.contactService.addHistoryEntry(
-            contact._id.toString(),
-            'call_failed',
-            `Error: ${error.message}`,
-          );
-        }
+
+      // Find contacts ready to be called
+      const contacts = await this.findContactsForCalling(
+        campaign._id.toString(), 
+        availableSlots, 
+        settings
+      );
+
+      if (contacts.length === 0) {
+        await this.checkCampaignCompletion(campaign);
+        return;
       }
+
+      // Initiate calls for selected contacts
+      await this.initiateContactCalls(campaign, contacts, settings);
     } catch (error) {
-      this.logger.error(`Error processing campaign ${campaign._id}: ${error.message}`, error.stack);
+      this.logger.error(`Error processing campaign ${campaign.name}`, error);
     }
   }
 
   /**
-   * Get the count of active calls for a campaign
+   * Find contacts eligible for calling
    */
-  private async getActiveCallCount(campaignId: string): Promise<number> {
-    return this.callService.getActiveCallCount(campaignId);
+  private async findContactsForCalling(
+    campaignId: string, 
+    limit: number, 
+    settings: CampaignCallSettings
+  ): Promise<ContactDocument[]> {
+    const query = {
+      campaign: new Types.ObjectId(campaignId),
+      $or: [
+        { status: ContactStatus.PENDING },
+        { 
+          status: ContactStatus.FAILED,
+          attemptCount: { $lt: settings.callRetryAttempts || 3 }
+        }
+      ]
+    };
+
+    return this.contactModel
+      .find(query)
+      .sort({ attemptCount: 1, lastAttemptDate: 1 })
+      .limit(limit)
+      .exec();
   }
 
   /**
-   * Check if a campaign is complete (all contacts have been processed)
+   * Initiate calls for selected contacts
    */
-  private async checkCampaignCompletion(campaign: CampaignDocument) {
-    // Count contacts that still need to be processed
-    const pendingCount = await this.contactService.countContactsByStatus(
-      campaign._id.toString(),
-      ['pending', 'in_progress', 'failed'],
-    );
-    
+  private async initiateContactCalls(
+    campaign: CampaignDocument, 
+    contacts: ContactDocument[], 
+    settings: CampaignCallSettings
+  ): Promise<void> {
+    const baseUrl = this.configService.get<string>('app.baseUrl', 'http://localhost:3000');
+    const fromNumber = settings.phoneNumber || 
+      this.configService.get<string>('twilio.phoneNumber', '');
+
+    for (const contact of contacts) {
+      try {
+        // Initiate outbound call
+        await this.callService.initiateOutboundCall(
+          campaign._id.toString(),
+          contact._id.toString(),
+          fromNumber,
+          contact.phoneNumber,
+          baseUrl
+        );
+
+        // Update contact status
+        await this.contactService.updateStatus(
+          contact._id.toString(), 
+          ContactStatus.IN_PROGRESS
+        );
+
+        // Increment attempt count
+        await this.contactService.incrementAttemptCount(contact._id.toString());
+
+        // Log call initiation
+        await this.contactService.addHistoryEntry(
+          contact._id.toString(),
+          'call_initiated',
+          'Call initiated by campaign scheduler'
+        );
+
+        // Update campaign metrics
+        await this.campaignModel.updateOne(
+          { _id: campaign._id },
+          { $inc: { contactedCount: 1 } }
+        );
+
+        this.logger.log(`Initiated call to ${contact.firstName} ${contact.lastName}`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to initiate call for contact ${contact._id}`, 
+          error
+        );
+
+        // Mark contact as failed
+        await this.contactService.updateStatus(
+          contact._id.toString(), 
+          ContactStatus.FAILED
+        );
+        await this.contactService.addHistoryEntry(
+          contact._id.toString(),
+          'call_failed',
+          `Scheduling error: ${error.message}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Check if a campaign is complete
+   */
+  private async checkCampaignCompletion(campaign: CampaignDocument): Promise<void> {
+    // Count remaining contacts that need processing
+    const pendingCount = await this.contactModel.countDocuments({
+      campaign: campaign._id,
+      status: { 
+        $in: [
+          ContactStatus.PENDING, 
+          ContactStatus.IN_PROGRESS, 
+          ContactStatus.FAILED
+        ]
+      }
+    });
+
+    // If no pending contacts, mark campaign as completed
     if (pendingCount === 0) {
-      this.logger.log(`Campaign ${campaign.name} has completed all contacts. Marking as completed.`);
+      this.logger.log(`Campaign ${campaign.name} completed. All contacts processed.`);
       
-      // Update campaign status to completed
       await this.campaignModel.updateOne(
         { _id: campaign._id },
-        { $set: { status: CampaignStatus.COMPLETED } },
+        { 
+          status: CampaignStatus.COMPLETED,
+          endTime: new Date()
+        }
       );
     }
   }
