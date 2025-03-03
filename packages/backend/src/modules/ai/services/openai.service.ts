@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { RetryService } from '../../resilience/services/retry.service';
+import { CircuitBreakerService } from '../../resilience/services/circuit-breaker.service';
+import { FallbackService } from '../../resilience/services/fallback.service';
+import { ErrorTrackingService } from '../../resilience/services/error-tracking.service';
 
 @Injectable()
 export class OpenAiService {
@@ -10,8 +14,15 @@ export class OpenAiService {
   private readonly temperature: number;
   private readonly maxTokens: number;
   private readonly embeddingModel: string;
+  private readonly serviceKey = 'openai';
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly retryService: RetryService,
+    private readonly circuitBreakerService: CircuitBreakerService,
+    private readonly fallbackService: FallbackService,
+    private readonly errorTrackingService: ErrorTrackingService,
+  ) {
     const apiKey = this.configService.get<string>('openai.apiKey');
     
     if (!apiKey) {
@@ -38,33 +49,70 @@ export class OpenAiService {
       model?: string;
     } = {},
   ): Promise<string> {
-    try {
-      // Properly type the messages for OpenAI API
-      const messages = [
-        ...conversationHistory.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        })),
-        { role: 'user' as const, content: prompt },
-      ];
+    const executeCall = async () => {
+      try {
+        // Properly type the messages for OpenAI API
+        const messages = [
+          ...conversationHistory.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          { role: 'user' as const, content: prompt },
+        ];
 
-      const response = await this.openai.chat.completions.create({
-        model: options.model || this.model,
-        messages,
-        temperature: options.temperature ?? this.temperature,
-        max_tokens: options.maxTokens ?? this.maxTokens,
-      });
+        const response = await this.openai.chat.completions.create({
+          model: options.model || this.model,
+          messages,
+          temperature: options.temperature ?? this.temperature,
+          max_tokens: options.maxTokens ?? this.maxTokens,
+        });
 
-      const generatedText = response.choices[0]?.message?.content;
+        const generatedText = response.choices[0]?.message?.content;
 
-      if (!generatedText) {
-        throw new Error('No response generated');
+        if (!generatedText) {
+          throw new Error('No response generated');
+        }
+
+        return generatedText;
+      } catch (error) {
+        this.logger.error(`Error generating OpenAI response: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          promptLength: prompt.length,
+          historyLength: conversationHistory.length,
+          model: options.model || this.model,
+        });
+        
+        throw error;
       }
+    };
 
-      return generatedText;
+    // Use circuit breaker with retry and fallback
+    try {
+      return await this.circuitBreakerService.executeWithCircuitBreaker(
+        this.serviceKey,
+        () => this.retryService.executeWithRetry(executeCall, {
+          retryCondition: (error) => {
+            // Only retry rate limiting errors or network issues
+            return (
+              error.message.includes('rate limit') ||
+              error.message.includes('timeout') ||
+              error.message.includes('network') ||
+              error.code === 'ECONNRESET'
+            );
+          },
+        }),
+      );
     } catch (error) {
-      this.logger.error(`Error generating OpenAI response: ${error.message}`, error.stack);
-      throw error;
+      // If circuit breaker fails, use fallback strategy
+      return await this.fallbackService.executeWithFallbackValue(
+        () => { throw error; }, // Just propagate the error to trigger fallback
+        { 
+          fallbackValue: this.getEmergencyResponse(error.message),
+          shouldFallback: () => true,
+        }
+      );
     }
   }
 
@@ -147,7 +195,19 @@ export class OpenAiService {
       };
     } catch (error) {
       this.logger.error(`Error processing chat message: ${error.message}`, error.stack);
-      throw error;
+      
+      // Track the error
+      await this.errorTrackingService.trackError(this.serviceKey, error, {
+        messageLength: message.length,
+        contextSize: JSON.stringify(context).length,
+        historyLength: conversationHistory.length,
+      });
+      
+      // Return a generic response if we can't process the message
+      return {
+        response: this.getEmergencyResponse(error.message),
+        extractedInfo: {},
+      };
     }
   }
 
@@ -189,16 +249,52 @@ export class OpenAiService {
    * This is used for vector search in the conversation context
    */
   async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await this.openai.embeddings.create({
-        model: this.embeddingModel,
-        input: text.trim(),
-      });
+    const executeCall = async () => {
+      try {
+        const response = await this.openai.embeddings.create({
+          model: this.embeddingModel,
+          input: text.trim(),
+        });
 
-      return response.data[0].embedding;
-    } catch (error) {
-      this.logger.error(`Error generating embedding: ${error.message}`, error.stack);
-      throw error;
+        return response.data[0].embedding;
+      } catch (error) {
+        this.logger.error(`Error generating embedding: ${error.message}`, error.stack);
+        
+        // Track the error
+        await this.errorTrackingService.trackError(this.serviceKey, error, {
+          textLength: text.length,
+          model: this.embeddingModel,
+        });
+        
+        throw error;
+      }
+    };
+
+    // Use retry mechanism for embeddings
+    return this.retryService.executeWithRetry(executeCall, {
+      maxRetries: 3,
+      retryDelay: 500,
+    });
+  }
+
+  /**
+   * Generates a fallback response when OpenAI service is unavailable
+   */
+  private getEmergencyResponse(errorMessage: string): string {
+    // Check if the error is related to content policy
+    if (errorMessage.toLowerCase().includes('content policy') || 
+        errorMessage.toLowerCase().includes('violates')) {
+      return "I apologize, but I'm unable to continue this specific conversation due to content policy restrictions. Let's focus on how I can help you with your business needs in a different way.";
     }
+    
+    // Generic fallback for service unavailability
+    return "I apologize, but I'm experiencing some technical difficulties at the moment. Let me gather my thoughts for a moment. Could you please repeat your question or concern, and I'll do my best to help you?";
+  }
+
+  /**
+   * Create an embedding for VectorStorageService
+   */
+  async createEmbedding(text: string, model?: string): Promise<number[]> {
+    return this.generateEmbedding(text);
   }
 }
